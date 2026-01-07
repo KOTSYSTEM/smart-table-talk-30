@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { mockCategories, mockMenuItems } from '@/data/mockData';
 import { MenuItem } from '@/types/restaurant';
+import { formatCurrency } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { 
   Search, 
@@ -12,9 +13,10 @@ import {
   Edit,
   Trash2,
   Clock,
-  DollarSign,
+  IndianRupee,
   Image,
-  MoreVertical
+  MoreVertical,
+  X
 } from 'lucide-react';
 
 export default function Menu() {
@@ -34,6 +36,7 @@ export default function Menu() {
     pizza: '🍕',
     burgers: '🍔',
     seafood: '🦐',
+    indian: '🍛',
     desserts: '🍰',
     beverages: '🥤',
     cocktails: '🍹',
@@ -130,8 +133,8 @@ export default function Menu() {
 
                     <div className="flex items-center gap-4 mt-3">
                       <div className="flex items-center gap-1 text-primary font-bold">
-                        <DollarSign className="w-4 h-4" />
-                        {item.price.toFixed(2)}
+                        <IndianRupee className="w-4 h-4" />
+                        {item.price}
                       </div>
                       <div className="flex items-center gap-1 text-sm text-muted-foreground">
                         <Clock className="w-3 h-3" />
@@ -156,7 +159,7 @@ export default function Menu() {
             <div className="flex items-center justify-between">
               <h2 className="font-display font-bold text-xl">Item Details</h2>
               <Button variant="ghost" size="icon" onClick={() => setSelectedItem(null)}>
-                <MoreVertical className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </Button>
             </div>
           </div>
@@ -186,7 +189,7 @@ export default function Menu() {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-secondary/50 rounded-xl">
                 <p className="text-sm text-muted-foreground">Price</p>
-                <p className="text-2xl font-bold text-primary">${selectedItem.price.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-primary">{formatCurrency(selectedItem.price)}</p>
               </div>
               <div className="p-3 bg-secondary/50 rounded-xl">
                 <p className="text-sm text-muted-foreground">Prep Time</p>
@@ -203,7 +206,7 @@ export default function Menu() {
                     <div key={variant.id} className="flex justify-between p-2 bg-secondary/50 rounded-lg">
                       <span>{variant.name}</span>
                       <span className="text-primary font-medium">
-                        {variant.priceModifier > 0 ? '+' : ''}${variant.priceModifier.toFixed(2)}
+                        {variant.priceModifier > 0 ? '+' : ''}{formatCurrency(variant.priceModifier)}
                       </span>
                     </div>
                   ))}

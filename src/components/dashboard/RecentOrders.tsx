@@ -1,8 +1,8 @@
 import { Order } from '@/types/restaurant';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, MoreVertical } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Clock } from 'lucide-react';
+import { formatCurrency } from '@/lib/currency';
 
 interface RecentOrdersProps {
   orders: Order[];
@@ -67,7 +67,7 @@ export function RecentOrders({ orders }: RecentOrdersProps) {
               </span>
               <div className="flex items-center gap-4">
                 <span className="font-semibold text-primary">
-                  ${order.total.toFixed(2)}
+                  {formatCurrency(order.total)}
                 </span>
                 <span className="text-muted-foreground flex items-center gap-1">
                   <Clock className="w-3 h-3" />
