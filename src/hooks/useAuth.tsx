@@ -32,13 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId);
 
       if (error) {
-        console.error('Error fetching roles:', error);
+        // Log only in development to prevent information leakage in production
+        if (import.meta.env.DEV) {
+          console.error('Error fetching roles:', error.message);
+        }
         return [];
       }
 
       return (data?.map(r => r.role) || []) as AppRole[];
     } catch (err) {
-      console.error('Error fetching roles:', err);
+      // Log only in development to prevent information leakage in production
+      if (import.meta.env.DEV) {
+        console.error('Error fetching roles:', err instanceof Error ? err.message : 'Unknown error');
+      }
       return [];
     }
   };
