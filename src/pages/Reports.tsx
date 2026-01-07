@@ -1,9 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { formatCurrency, formatCompactCurrency } from '@/lib/currency';
 import { 
   BarChart3, 
   TrendingUp, 
-  DollarSign,
+  IndianRupee,
   ShoppingBag,
   Users,
   Clock,
@@ -15,24 +16,24 @@ import {
 
 export default function Reports() {
   const topItems = [
-    { name: 'Margherita Pizza', sales: 156, revenue: 2651.44, change: 12.5 },
-    { name: 'Classic Burger', sales: 134, revenue: 2542.66, change: 8.3 },
-    { name: 'Grilled Salmon', sales: 98, revenue: 2841.02, change: -3.2 },
-    { name: 'Caesar Salad', sales: 87, revenue: 1129.13, change: 15.7 },
-    { name: 'Pasta Carbonara', sales: 76, revenue: 1367.24, change: 5.1 },
+    { name: 'Butter Chicken', sales: 156, revenue: 70044, change: 12.5 },
+    { name: 'Biryani', sales: 134, revenue: 60166, change: 8.3 },
+    { name: 'Grilled Salmon', sales: 98, revenue: 88102, change: -3.2 },
+    { name: 'Paneer Tikka', sales: 87, revenue: 34713, change: 15.7 },
+    { name: 'Margherita Pizza', sales: 76, revenue: 34124, change: 5.1 },
   ];
 
   const hourlyData = [
-    { hour: '11AM', orders: 12, revenue: 456 },
-    { hour: '12PM', orders: 28, revenue: 1245 },
-    { hour: '1PM', orders: 35, revenue: 1567 },
-    { hour: '2PM', orders: 22, revenue: 987 },
-    { hour: '3PM', orders: 15, revenue: 678 },
-    { hour: '6PM', orders: 32, revenue: 1456 },
-    { hour: '7PM', orders: 45, revenue: 2134 },
-    { hour: '8PM', orders: 52, revenue: 2567 },
-    { hour: '9PM', orders: 38, revenue: 1789 },
-    { hour: '10PM', orders: 18, revenue: 876 },
+    { hour: '11AM', orders: 12, revenue: 14568 },
+    { hour: '12PM', orders: 28, revenue: 33180 },
+    { hour: '1PM', orders: 35, revenue: 41475 },
+    { hour: '2PM', orders: 22, revenue: 26070 },
+    { hour: '3PM', orders: 15, revenue: 17775 },
+    { hour: '6PM', orders: 32, revenue: 37920 },
+    { hour: '7PM', orders: 45, revenue: 53325 },
+    { hour: '8PM', orders: 52, revenue: 61620 },
+    { hour: '9PM', orders: 38, revenue: 45030 },
+    { hour: '10PM', orders: 18, revenue: 21330 },
   ];
 
   const maxOrders = Math.max(...hourlyData.map(d => d.orders));
@@ -61,13 +62,13 @@ export default function Reports() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-primary/20 to-primary/5 rounded-2xl border border-primary/20 p-6">
           <div className="flex items-center justify-between mb-4">
-            <DollarSign className="w-8 h-8 text-primary" />
+            <IndianRupee className="w-8 h-8 text-primary" />
             <Badge variant="success" className="gap-1">
               <ArrowUpRight className="w-3 h-3" /> 12.5%
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">Total Revenue</p>
-          <p className="text-3xl font-display font-bold mt-1">$12,847</p>
+          <p className="text-3xl font-display font-bold mt-1">{formatCompactCurrency(352493)}</p>
         </div>
 
         <div className="bg-card rounded-2xl border border-border p-6">
@@ -186,7 +187,7 @@ export default function Reports() {
                     </div>
                   </td>
                   <td className="text-right p-4">{item.sales}</td>
-                  <td className="text-right p-4 font-semibold">${item.revenue.toFixed(2)}</td>
+                  <td className="text-right p-4 font-semibold">{formatCurrency(item.revenue)}</td>
                   <td className="text-right p-4">
                     <Badge variant={item.change > 0 ? 'success' : 'destructive'} className="gap-1">
                       {item.change > 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}

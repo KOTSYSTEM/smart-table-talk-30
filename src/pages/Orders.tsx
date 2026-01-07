@@ -4,12 +4,12 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { mockOrders } from '@/data/mockData';
 import { Order, OrderStatus } from '@/types/restaurant';
+import { formatCurrency } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { 
   Search, 
   Filter, 
   Clock, 
-  MoreVertical,
   Eye,
   Receipt,
   Printer,
@@ -135,7 +135,7 @@ export default function Orders() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-lg text-primary">${order.total.toFixed(2)}</p>
+                  <p className="font-bold text-lg text-primary">{formatCurrency(order.total)}</p>
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
                     <Clock className="w-3 h-3" />
                     {formatTime(order.createdAt)}
@@ -186,7 +186,7 @@ export default function Orders() {
                     <p className="text-sm text-muted-foreground">Qty: {item.quantity}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold">${item.price.toFixed(2)}</p>
+                    <p className="font-semibold">{formatCurrency(item.price)}</p>
                     <Badge variant="secondary" className="text-xs mt-1">
                       {item.status}
                     </Badge>
@@ -201,21 +201,21 @@ export default function Orders() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span>${selectedOrder.subtotal.toFixed(2)}</span>
+                <span>{formatCurrency(selectedOrder.subtotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Tax</span>
-                <span>${selectedOrder.tax.toFixed(2)}</span>
+                <span className="text-muted-foreground">GST (5%)</span>
+                <span>{formatCurrency(selectedOrder.tax)}</span>
               </div>
               {selectedOrder.discount > 0 && (
                 <div className="flex justify-between text-success">
                   <span>Discount</span>
-                  <span>-${selectedOrder.discount.toFixed(2)}</span>
+                  <span>-{formatCurrency(selectedOrder.discount)}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-border">
                 <span>Total</span>
-                <span className="text-primary">${selectedOrder.total.toFixed(2)}</span>
+                <span className="text-primary">{formatCurrency(selectedOrder.total)}</span>
               </div>
             </div>
 

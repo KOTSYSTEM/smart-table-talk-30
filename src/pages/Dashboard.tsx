@@ -4,8 +4,9 @@ import { TableOverview } from '@/components/dashboard/TableOverview';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { LiveKOT } from '@/components/dashboard/LiveKOT';
 import { mockDashboardStats, mockOrders, mockTables } from '@/data/mockData';
+import { formatCurrency, formatCompactCurrency } from '@/lib/currency';
 import { 
-  DollarSign, 
+  IndianRupee, 
   ShoppingBag, 
   TrendingUp, 
   LayoutGrid,
@@ -28,8 +29,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Today's Revenue"
-          value={`$${mockDashboardStats.todaySales.toLocaleString()}`}
-          icon={<DollarSign className="w-6 h-6" />}
+          value={formatCompactCurrency(mockDashboardStats.todaySales)}
+          icon={<IndianRupee className="w-6 h-6" />}
           trend={{ value: 12.5, isPositive: true }}
           variant="primary"
         />
@@ -42,7 +43,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="Average Order Value"
-          value={`$${mockDashboardStats.averageOrderValue.toFixed(2)}`}
+          value={formatCurrency(mockDashboardStats.averageOrderValue)}
           icon={<TrendingUp className="w-6 h-6" />}
           trend={{ value: 3.1, isPositive: true }}
           variant="default"

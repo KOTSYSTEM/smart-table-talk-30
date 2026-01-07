@@ -7,16 +7,19 @@ import {
   Plus, 
   Minus, 
   Trash2, 
-  X,
   CreditCard,
   Banknote,
   Smartphone,
   Percent,
   User,
-  StickyNote
+  StickyNote,
+  QrCode,
+  LayoutGrid,
+  ShoppingBag
 } from 'lucide-react';
 import { mockCategories, mockMenuItems } from '@/data/mockData';
 import { MenuItem, OrderItem } from '@/types/restaurant';
+import { formatCurrency, TAX_CONFIG } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 
 export default function POS() {
@@ -68,8 +71,21 @@ export default function POS() {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.price, 0);
-  const tax = subtotal * 0.1;
-  const total = subtotal + tax;
+  const cgst = (subtotal * TAX_CONFIG.CGST) / 100;
+  const sgst = (subtotal * TAX_CONFIG.SGST) / 100;
+  const total = subtotal + cgst + sgst;
+
+  const categoryIcons: Record<string, string> = {
+    starters: '🥗',
+    mains: '🍝',
+    pizza: '🍕',
+    burgers: '🍔',
+    seafood: '🦐',
+    indian: '🍛',
+    desserts: '🍰',
+    beverages: '🥤',
+    cocktails: '🍹',
+  };
 
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-6 animate-fade-in">
@@ -132,18 +148,11 @@ export default function POS() {
                 className="bg-card border border-border rounded-xl p-4 text-left hover:border-primary/50 hover:shadow-lg transition-all active:scale-[0.98] group"
               >
                 <div className="aspect-square rounded-lg bg-secondary mb-3 flex items-center justify-center text-4xl group-hover:scale-105 transition-transform">
-                  {item.category === 'starters' && '🥗'}
-                  {item.category === 'mains' && '🍝'}
-                  {item.category === 'pizza' && '🍕'}
-                  {item.category === 'burgers' && '🍔'}
-                  {item.category === 'seafood' && '🦐'}
-                  {item.category === 'desserts' && '🍰'}
-                  {item.category === 'beverages' && '🥤'}
-                  {item.category === 'cocktails' && '🍹'}
+                  {categoryIcons[item.category] || '🍽️'}
                 </div>
                 <h4 className="font-semibold text-sm mb-1 line-clamp-2">{item.name}</h4>
                 <div className="flex items-center justify-between">
-                  <span className="text-primary font-bold">${item.price.toFixed(2)}</span>
+                  <span className="text-primary font-bold">{formatCurrency(item.price)}</span>
                   <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                     <Plus className="w-4 h-4" />
                   </div>
@@ -185,7 +194,7 @@ export default function POS() {
               <div key={item.id} className="flex gap-3 p-3 bg-secondary/50 rounded-xl">
                 <div className="flex-1">
                   <h4 className="font-medium text-sm">{item.menuItem.name}</h4>
-                  <p className="text-primary font-semibold text-sm">${item.menuItem.price.toFixed(2)}</p>
+                  <p className="text-primary font-semibold text-sm">{formatCurrency(item.menuItem.price)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -238,20 +247,24 @@ export default function POS() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-muted-foreground">
               <span>Subtotal</span>
-              <span>${subtotal.toFixed(2)}</span>
+              <span>{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between text-muted-foreground">
-              <span>Tax (10%)</span>
-              <span>${tax.toFixed(2)}</span>
+              <span>CGST ({TAX_CONFIG.CGST}%)</span>
+              <span>{formatCurrency(cgst)}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>SGST ({TAX_CONFIG.SGST}%)</span>
+              <span>{formatCurrency(sgst)}</span>
             </div>
             <div className="flex justify-between font-bold text-lg pt-2 border-t border-border">
               <span>Total</span>
-              <span className="text-primary">${total.toFixed(2)}</span>
+              <span className="text-primary">{formatCurrency(total)}</span>
             </div>
           </div>
 
           {/* Payment Buttons */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <Button variant="secondary" className="flex-col h-auto py-3">
               <Banknote className="w-5 h-5 mb-1" />
               <span className="text-xs">Cash</span>
@@ -261,37 +274,20 @@ export default function POS() {
               <span className="text-xs">Card</span>
             </Button>
             <Button variant="secondary" className="flex-col h-auto py-3">
-              <Smartphone className="w-5 h-5 mb-1" />
+              <QrCode className="w-5 h-5 mb-1" />
               <span className="text-xs">UPI</span>
+            </Button>
+            <Button variant="secondary" className="flex-col h-auto py-3">
+              <Smartphone className="w-5 h-5 mb-1" />
+              <span className="text-xs">Wallet</span>
             </Button>
           </div>
 
           <Button className="w-full h-12 text-base font-semibold shadow-glow" disabled={cart.length === 0}>
-            Place Order • ${total.toFixed(2)}
+            Place Order • {formatCurrency(total)}
           </Button>
         </div>
       </div>
     </div>
-  );
-}
-
-function ShoppingBag(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/>
-      <path d="M3 6h18"/>
-      <path d="M16 10a4 4 0 0 1-8 0"/>
-    </svg>
-  );
-}
-
-function LayoutGrid(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect width="7" height="7" x="3" y="3" rx="1"/>
-      <rect width="7" height="7" x="14" y="3" rx="1"/>
-      <rect width="7" height="7" x="14" y="14" rx="1"/>
-      <rect width="7" height="7" x="3" y="14" rx="1"/>
-    </svg>
   );
 }
