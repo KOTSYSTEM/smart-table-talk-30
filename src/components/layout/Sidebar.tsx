@@ -17,6 +17,8 @@ import {
   Truck,
   UserCircle,
   LogOut,
+  TrendingUp,
+  Warehouse,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -36,9 +38,11 @@ const navItems = [
   { icon: UtensilsCrossed, label: 'Kitchen', path: '/kitchen' },
   { icon: CalendarDays, label: 'Reservations', path: '/reservations' },
   { icon: Package, label: 'Menu', path: '/menu' },
+  { icon: Warehouse, label: 'Inventory', path: '/inventory' },
   { icon: Users, label: 'Customers', path: '/customers' },
   { icon: Truck, label: 'Delivery', path: '/delivery' },
   { icon: BarChart3, label: 'Reports', path: '/reports' },
+  { icon: TrendingUp, label: 'Analytics', path: '/analytics' },
 ];
 
 const bottomNavItems = [

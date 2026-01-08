@@ -17,6 +17,8 @@ import Reservations from "./pages/Reservations";
 import Customers from "./pages/Customers";
 import Delivery from "./pages/Delivery";
 import Reports from "./pages/Reports";
+import Analytics from "./pages/Analytics";
+import Inventory from "./pages/Inventory";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import Unauthorized from "./pages/Unauthorized";
@@ -86,6 +88,16 @@ const App = () => (
               <Route path="/reports" element={
                 <ProtectedRoute allowedRoles={['owner', 'manager']}>
                   <AppLayout><Reports /></AppLayout>
+                </ProtectedRoute>
+              } />
+              <Route path="/analytics" element={
+                <ProtectedRoute allowedRoles={['owner', 'manager']}>
+                  <AppLayout><Analytics /></AppLayout>
+                </ProtectedRoute>
+              } />
+              <Route path="/inventory" element={
+                <ProtectedRoute allowedRoles={['owner', 'manager']}>
+                  <AppLayout><Inventory /></AppLayout>
                 </ProtectedRoute>
               } />
               <Route path="/settings" element={
