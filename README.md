@@ -1,73 +1,125 @@
-# Welcome to your Lovable project
+# KOTPro - Enterprise Restaurant Management System
 
-## Project info
+An enterprise-grade, multi-tenant restaurant management and POS system built with React, TypeScript, and Supabase.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+### Core Modules
+- **Point of Sale (POS)** - Fast order processing with touch-friendly interface
+- **Kitchen Display System (KDS)** - Real-time order tracking for kitchen staff
+- **Table Management** - Visual floor plan with table status tracking
+- **Menu Management** - Categories, items, variants, and modifiers
+- **Order Management** - Order lifecycle from creation to completion
+- **Reservations** - Table booking with waitlist support
 
-There are several ways of editing your application.
+### Enterprise Features
+- **Multi-Tenant Architecture** - Complete organization isolation
+- **Multi-Location Support** - Manage multiple restaurant branches
+- **Role-Based Access Control (RBAC)** - Granular permissions per role
+- **Staff Management** - Scheduling, time tracking, performance metrics
+- **Inventory Management** - Stock tracking, suppliers, purchase orders
+- **Customer Loyalty** - Points, tiers, and rewards program
+- **Audit Logging** - Complete activity trail
 
-**Use Lovable**
+### Coming Soon
+- Customer-facing ordering app
+- Delivery partner integrations
+- Advanced analytics dashboard
+- Mobile apps for staff and customers
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Tailwind CSS, shadcn/ui
+- **Backend**: Supabase (PostgreSQL, Auth, Real-time)
+- **State Management**: TanStack Query
+- **Routing**: React Router DOM
+- **Charts**: Recharts
 
-**Use your preferred IDE**
+## Getting Started
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+- Supabase account
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Installation
 
-Follow these steps:
+1. Clone the repository
+```bash
+git clone https://github.com/KOTSYSTEM/smart-table-talk-30.git
+cd smart-table-talk-30
+```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2. Install dependencies
+```bash
+npm install
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+3. Set up environment variables
+```bash
+cp .env.example .env
+```
 
-# Step 3: Install the necessary dependencies.
-npm i
+4. Add your Supabase credentials to `.env`:
+```env
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+5. Run database migrations (in Supabase SQL Editor):
+   - `migrations/001_multi_tenant_upgrade.sql`
+   - `migrations/002_user_management_security.sql`
+   - `migrations/003_enhanced_data_model.sql`
+
+6. Start the development server
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Project Structure
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```
+src/
+├── components/     # Reusable UI components
+├── contexts/       # React context providers
+├── hooks/          # Custom React hooks
+├── integrations/   # Third-party integrations
+├── pages/          # Page components
+├── types/          # TypeScript type definitions
+└── utils/          # Utility functions
 
-**Use GitHub Codespaces**
+migrations/         # SQL migration files
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Database Schema
 
-## What technologies are used for this project?
+### Core Tables
+- `organizations` - Tenant isolation
+- `locations` - Multi-location support
+- `staff` - Staff members with roles
+- `categories` - Menu categories
+- `menu_items` - Menu items
+- `orders` - Customer orders
+- `customers` - Customer records
+- `reservations` - Table reservations
 
-This project is built with:
+### Advanced Tables
+- `permissions` - Granular permission definitions
+- `role_templates` - Pre-configured role permissions
+- `staff_schedules` - Staff scheduling
+- `time_entries` - Clock in/out tracking
+- `audit_logs` - Activity logging
+- `inventory_items` - Stock management
+- `suppliers` - Vendor management
+- `recipes` - Recipe with ingredients
+- `loyalty_rules` - Loyalty program config
+- `loyalty_transactions` - Points history
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## License
 
-## How can I deploy this project?
+MIT License - See LICENSE file for details.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Support
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+For support, email support@kotsystem.com or open an issue.
