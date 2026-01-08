@@ -68,7 +68,7 @@ export function useOrders(status?: Order['status']) {
       }
 
       const { data, error } = await query;
-      
+
       if (error) throw error;
       return data as OrderWithRelations[];
     },
@@ -94,7 +94,7 @@ export function useOrder(id: string) {
         `)
         .eq('id', id)
         .single();
-      
+
       if (error) throw error;
       return data as OrderWithRelations;
     },
@@ -140,7 +140,7 @@ export function useTodayOrders() {
         `)
         .gte('created_at', today.toISOString())
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
       return data;
     },
@@ -149,22 +149,36 @@ export function useTodayOrders() {
 
 export function useCreateOrder() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: async ({ 
-      order, 
-      items 
-    }: { 
-      order: OrderInsert; 
-      items: Omit<OrderItemInsert, 'order_id'>[] 
+    mutationFn: async ({
+      order,
+      items
+    }: {
+      order: OrderInsert & { organization_id?: string };
+      items: Omit<OrderItemInsert, 'order_id'>[]
     }) => {
-      // Create order first
+      // Get organization_id from existing data or use default
+      let orgId = order.organization_id;
+
+      if (!orgId) {
+        // Try to get from existing organization
+        // @ts-ignore - organizations table exists after migration
+        const { data: orgData } = await supabase.from('organizations').select('id').limit(1).single();
+
+        orgId = (orgData as { id?: string })?.id;
+      }
+
+      // Create order with organization_id
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
-        .insert(order)
+        .insert({
+          ...order,
+          organization_id: orgId,
+        } as unknown as OrderInsert)
         .select()
         .single();
-      
+
       if (orderError) throw orderError;
 
       // Create order items
@@ -177,7 +191,7 @@ export function useCreateOrder() {
         const { error: itemsError } = await supabase
           .from('order_items')
           .insert(orderItems);
-        
+
         if (itemsError) throw itemsError;
       }
 
@@ -192,7 +206,7 @@ export function useCreateOrder() {
 
 export function useUpdateOrderStatus() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: Order['status'] }) => {
       const { data, error } = await supabase
@@ -201,7 +215,7 @@ export function useUpdateOrderStatus() {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -213,7 +227,7 @@ export function useUpdateOrderStatus() {
 
 export function useUpdateOrderItemStatus() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: OrderItem['status'] }) => {
       const { data, error } = await supabase
@@ -222,7 +236,7 @@ export function useUpdateOrderItemStatus() {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -234,14 +248,14 @@ export function useUpdateOrderItemStatus() {
 
 export function useDeleteOrder() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from('orders')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
