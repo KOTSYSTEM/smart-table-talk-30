@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Search,
@@ -17,19 +18,22 @@ import {
   CreditCard,
   Banknote,
   Smartphone,
-  Percent,
-  User,
-  StickyNote,
   QrCode,
   LayoutGrid,
   ShoppingBag,
   Check,
-  X
+  X,
+  Send,
+  Receipt,
+  ChefHat,
+  ArrowLeft,
+  Users,
+  Clock
 } from 'lucide-react';
 import { useCategories } from '@/hooks/useCategories';
 import { useMenuItems, type MenuItemWithRelations } from '@/hooks/useMenuItems';
 import { useTables } from '@/hooks/useTables';
-import { useCreateOrder } from '@/hooks/useOrders';
+import { useCreateOrder, useOrders } from '@/hooks/useOrders';
 import { formatCurrency, TAX_CONFIG } from '@/lib/currency';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -41,6 +45,7 @@ interface CartItem {
   quantity: number;
   price: number;
   notes?: string;
+  isNew?: boolean; // Track new items for current KOT
 }
 
 interface SelectedTable {
@@ -49,34 +54,52 @@ interface SelectedTable {
   section: string;
   capacity: number;
   status: string;
+  currentOrderId?: string;
 }
 
+type POSStep = 'select-table' | 'take-order' | 'generate-bill' | 'payment';
+
 export default function POS() {
+  // Current step in workflow
+  const [currentStep, setCurrentStep] = useState<POSStep>('select-table');
+
+  // Table & Order state
+  const [selectedTable, setSelectedTable] = useState<SelectedTable | null>(null);
+  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [existingItems, setExistingItems] = useState<CartItem[]>([]);
+  const [newItems, setNewItems] = useState<CartItem[]>([]);
+  const [kotNumber, setKotNumber] = useState(1);
+
+  // Menu state
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'delivery'>('dine_in');
-  const [selectedTable, setSelectedTable] = useState<SelectedTable | null>(null);
-  const [tableDialogOpen, setTableDialogOpen] = useState(false);
+
+  // Payment state
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'upi' | 'wallet'>('cash');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [orderNotes, setOrderNotes] = useState('');
-  const [discount, setDiscount] = useState(0);
-  const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
+  const [showBillDialog, setShowBillDialog] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [guestCount, setGuestCount] = useState(2);
 
+  // Data hooks
   const { data: categories, isLoading: categoriesLoading } = useCategories();
   const { data: menuItems, isLoading: itemsLoading } = useMenuItems(selectedCategoryId, searchQuery);
   const { data: tables, isLoading: tablesLoading } = useTables();
   const createOrder = useCreateOrder();
 
   const availableItems = menuItems?.filter(item => item.is_available) || [];
-  const freeTables = tables?.filter(t => t.status === 'free') || [];
+  const allItems = [...existingItems, ...newItems];
 
+  // Calculate totals
+  const subtotal = allItems.reduce((sum, item) => sum + item.price, 0);
+  const cgst = (subtotal * TAX_CONFIG.CGST) / 100;
+  const sgst = (subtotal * TAX_CONFIG.SGST) / 100;
+  const tax = cgst + sgst;
+  const total = subtotal + tax;
+
+  // Add item to current KOT
   const addToCart = (item: MenuItemWithRelations) => {
-    setCart(prev => {
+    setNewItems(prev => {
       const existing = prev.find(ci => ci.menuItem.id === item.id);
       if (existing) {
         return prev.map(ci =>
@@ -86,17 +109,19 @@ export default function POS() {
         );
       }
       return [...prev, {
-        id: `oi-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         menuItem: item,
         quantity: 1,
-        price: Number(item.price)
+        price: Number(item.price),
+        isNew: true
       }];
     });
-    toast.success(`${item.name} added to cart`);
+    toast.success(`${item.name} added`);
   };
 
-  const updateQuantity = (itemId: string, delta: number) => {
-    setCart(prev =>
+  const updateQuantity = (itemId: string, delta: number, isNewItem: boolean) => {
+    const setter = isNewItem ? setNewItems : setExistingItems;
+    setter(prev =>
       prev.map(item => {
         if (item.id === itemId) {
           const newQty = Math.max(0, item.quantity + delta);
@@ -107,108 +132,189 @@ export default function POS() {
     );
   };
 
-  const removeItem = (itemId: string) => {
-    setCart(prev => prev.filter(item => item.id !== itemId));
+  const removeItem = (itemId: string, isNewItem: boolean) => {
+    const setter = isNewItem ? setNewItems : setExistingItems;
+    setter(prev => prev.filter(item => item.id !== itemId));
   };
 
-  const clearCart = () => {
-    setCart([]);
-    setSelectedTable(null);
-    setCustomerName('');
-    setCustomerPhone('');
-    setOrderNotes('');
-    setDiscount(0);
-  };
-
-  const selectTable = (table: any) => {
+  // Select table and start order
+  const selectTable = async (table: any) => {
     setSelectedTable({
       id: table.id,
       number: table.number,
       section: table.section,
       capacity: table.capacity,
-      status: table.status
+      status: table.status,
+      currentOrderId: table.current_order_id
     });
-    setTableDialogOpen(false);
+
+    // If table has existing order, load it
+    if (table.current_order_id) {
+      // TODO: Load existing order items
+      setCurrentOrderId(table.current_order_id);
+      setKotNumber(2); // Assuming at least 1 KOT exists
+    }
+
+    setCurrentStep('take-order');
     toast.success(`Table ${table.number} selected`);
   };
 
-  // Calculate totals
-  const subtotal = cart.reduce((sum, item) => sum + item.price, 0);
-  const discountAmount = discountType === 'percent'
-    ? (subtotal * discount / 100)
-    : discount;
-  const afterDiscount = subtotal - discountAmount;
-  const cgst = (afterDiscount * TAX_CONFIG.CGST) / 100;
-  const sgst = (afterDiscount * TAX_CONFIG.SGST) / 100;
-  const tax = cgst + sgst;
-  const total = afterDiscount + tax;
-
-  const handlePlaceOrder = async () => {
-    if (cart.length === 0) {
-      toast.error('Please add items to cart');
-      return;
-    }
-
-    if (orderType === 'dine_in' && !selectedTable) {
-      toast.error('Please select a table for dine-in order');
-      setTableDialogOpen(true);
+  // Send KOT to kitchen
+  const sendKOT = async () => {
+    if (newItems.length === 0) {
+      toast.error('Add items before sending KOT');
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // Create the order
-      const orderData = await createOrder.mutateAsync({
-        order: {
-          type: orderType,
-          status: 'pending',
-          subtotal,
-          tax,
-          discount: discountAmount,
-          total,
-          table_id: selectedTable?.id,
-          notes: orderNotes || undefined,
-        },
-        items: cart.map(item => ({
+      if (!currentOrderId) {
+        // Create new order
+        const orderData = await createOrder.mutateAsync({
+          order: {
+            type: 'dine_in',
+            status: 'preparing',
+            subtotal: newItems.reduce((sum, item) => sum + item.price, 0),
+            tax: 0,
+            discount: 0,
+            total: newItems.reduce((sum, item) => sum + item.price, 0),
+            table_id: selectedTable?.id,
+          },
+          items: newItems.map(item => ({
+            menu_item_id: item.menuItem.id,
+            quantity: item.quantity,
+            unit_price: Number(item.menuItem.price),
+            total_price: item.price,
+            status: 'new',
+            notes: item.notes,
+          })),
+        });
+
+        setCurrentOrderId(orderData.id);
+
+        // Update table status
+        if (selectedTable) {
+          await supabase
+            .from('restaurant_tables')
+            .update({
+              status: 'occupied',
+              current_order_id: orderData.id,
+              occupied_since: new Date().toISOString(),
+              guest_count: guestCount
+            })
+            .eq('id', selectedTable.id);
+        }
+      } else {
+        // Add items to existing order
+        const orderItems = newItems.map(item => ({
+          order_id: currentOrderId,
           menu_item_id: item.menuItem.id,
           quantity: item.quantity,
           unit_price: Number(item.menuItem.price),
           total_price: item.price,
           status: 'new',
           notes: item.notes,
-        })),
-      });
+        }));
 
-      // Update table status if dine-in
-      if (selectedTable) {
-        await supabase
-          .from('restaurant_tables')
-          .update({
-            status: 'occupied',
-            current_order_id: orderData.id,
-            occupied_since: new Date().toISOString()
-          })
-          .eq('id', selectedTable.id);
+        const { error } = await supabase
+          .from('order_items')
+          .insert(orderItems);
+
+        if (error) throw error;
       }
 
-      // Show success animation
-      setShowSuccess(true);
-      setTimeout(() => {
-        setShowSuccess(false);
-        clearCart();
-      }, 2000);
+      // Move new items to existing
+      setExistingItems(prev => [...prev, ...newItems.map(item => ({ ...item, isNew: false }))]);
+      setNewItems([]);
+      setKotNumber(k => k + 1);
 
-      toast.success('Order placed successfully!');
+      toast.success(`KOT #${kotNumber} sent to kitchen! 🍳`);
     } catch (error) {
-      console.error('Order error:', error);
-      toast.error('Failed to place order. Please try again.');
+      console.error('KOT error:', error);
+      toast.error('Failed to send KOT');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const isLoading = categoriesLoading || itemsLoading;
+  // Generate bill
+  const generateBill = () => {
+    if (allItems.length === 0) {
+      toast.error('No items to bill');
+      return;
+    }
+    setCurrentStep('generate-bill');
+    setShowBillDialog(true);
+  };
+
+  // Complete payment
+  const completePayment = async () => {
+    setIsProcessing(true);
+
+    try {
+      // Update order with final totals and status
+      if (currentOrderId) {
+        await supabase
+          .from('orders')
+          .update({
+            status: 'completed',
+            subtotal,
+            tax,
+            total,
+          })
+          .eq('id', currentOrderId);
+
+        // Free up the table
+        if (selectedTable) {
+          await supabase
+            .from('restaurant_tables')
+            .update({
+              status: 'cleaning',
+              current_order_id: null,
+              guest_count: 0
+            })
+            .eq('id', selectedTable.id);
+        }
+      }
+
+      setShowBillDialog(false);
+      setShowSuccess(true);
+
+      setTimeout(() => {
+        // Reset everything
+        setShowSuccess(false);
+        setSelectedTable(null);
+        setCurrentOrderId(null);
+        setExistingItems([]);
+        setNewItems([]);
+        setKotNumber(1);
+        setCurrentStep('select-table');
+      }, 3000);
+
+      toast.success('Payment completed! 🎉');
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast.error('Payment failed');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Back to table selection
+  const backToTables = () => {
+    if (allItems.length > 0) {
+      if (!confirm('You have unsent items. Are you sure you want to go back?')) {
+        return;
+      }
+    }
+    setSelectedTable(null);
+    setCurrentOrderId(null);
+    setExistingItems([]);
+    setNewItems([]);
+    setKotNumber(1);
+    setCurrentStep('select-table');
+  };
 
   // Success overlay
   if (showSuccess) {
@@ -218,39 +324,113 @@ export default function POS() {
           <div className="w-24 h-24 rounded-full bg-emerald-500 flex items-center justify-center mx-auto mb-6 animate-bounce">
             <Check className="w-12 h-12 text-white" />
           </div>
-          <h2 className="text-3xl font-bold text-emerald-500 mb-2">Order Placed!</h2>
-          <p className="text-muted-foreground">Order sent to kitchen</p>
-          {selectedTable && (
-            <p className="text-lg mt-2">Table {selectedTable.number}</p>
-          )}
+          <h2 className="text-3xl font-bold text-emerald-500 mb-2">Payment Complete!</h2>
+          <p className="text-muted-foreground">Table {selectedTable?.number} is now free</p>
+          <p className="text-2xl font-bold mt-4">{formatCurrency(total)}</p>
         </div>
       </div>
     );
   }
 
+  // Step 1: Table Selection
+  if (currentStep === 'select-table') {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-3xl font-display font-bold">Select Table</h1>
+          <p className="text-muted-foreground mt-1">Choose a table to start taking orders</p>
+        </div>
+
+        {tablesLoading ? (
+          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+            {tables?.map((table) => {
+              const isFree = table.status === 'free';
+              const isOccupied = table.status === 'occupied';
+
+              return (
+                <button
+                  key={table.id}
+                  onClick={() => selectTable(table)}
+                  className={cn(
+                    "p-4 rounded-xl border-2 transition-all text-center hover:scale-105",
+                    isFree && "border-emerald-500/50 bg-emerald-500/10 hover:border-emerald-500",
+                    isOccupied && "border-amber-500/50 bg-amber-500/10 hover:border-amber-500",
+                    !isFree && !isOccupied && "border-border bg-muted opacity-50"
+                  )}
+                >
+                  <div className="text-2xl font-bold mb-1">T{table.number}</div>
+                  <div className="text-xs text-muted-foreground mb-2">{table.section}</div>
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      "text-xs",
+                      isFree && "bg-emerald-500/20 text-emerald-500",
+                      isOccupied && "bg-amber-500/20 text-amber-500"
+                    )}
+                  >
+                    {isFree ? 'Free' : isOccupied ? 'Occupied' : table.status}
+                  </Badge>
+                  {isOccupied && table.guest_count && (
+                    <div className="flex items-center justify-center gap-1 mt-2 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3" />
+                      {table.guest_count}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Quick Stats */}
+        <div className="flex gap-4 pt-4 border-t">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-emerald-500" />
+            <span className="text-sm">Free ({tables?.filter(t => t.status === 'free').length})</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-amber-500" />
+            <span className="text-sm">Occupied ({tables?.filter(t => t.status === 'occupied').length})</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 2: Take Order
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-6 animate-fade-in">
       {/* Menu Section */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Order Type Selector */}
-        <div className="flex gap-2 mb-4">
-          {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => (
-            <Button
-              key={type}
-              variant={orderType === type ? 'default' : 'secondary'}
-              className={cn(
-                "capitalize flex-1 h-12",
-                orderType === type && "ring-2 ring-primary ring-offset-2"
-              )}
-              onClick={() => {
-                setOrderType(type);
-                if (type !== 'dine_in') setSelectedTable(null);
-              }}
-            >
-              {type === 'dine_in' ? '🍽️' : type === 'takeaway' ? '🥡' : '🚚'}
-              <span className="ml-2">{type.replace('_', ' ')}</span>
+        {/* Header with Table Info */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={backToTables}>
+              <ArrowLeft className="w-5 h-5" />
             </Button>
-          ))}
+            <div>
+              <h2 className="text-xl font-bold">Table {selectedTable?.number}</h2>
+              <p className="text-sm text-muted-foreground">{selectedTable?.section}</p>
+            </div>
+            <Badge variant="secondary" className="text-amber-500 bg-amber-500/20">
+              <Users className="w-3 h-3 mr-1" />
+              {guestCount} Guests
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">KOT #{kotNumber}</Badge>
+            {currentOrderId && (
+              <Badge variant="secondary" className="text-emerald-500">
+                Order Active
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -270,53 +450,40 @@ export default function POS() {
             variant={!selectedCategoryId ? 'default' : 'secondary'}
             size="sm"
             onClick={() => setSelectedCategoryId(undefined)}
-            className="whitespace-nowrap"
           >
-            All Items
+            All
           </Button>
-          {categoriesLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-24" />
-            ))
-          ) : (
-            categories?.map((cat) => (
-              <Button
-                key={cat.id}
-                variant={selectedCategoryId === cat.id ? 'default' : 'secondary'}
-                size="sm"
-                onClick={() => setSelectedCategoryId(cat.id)}
-                className="whitespace-nowrap"
-              >
-                {cat.icon} {cat.name}
-              </Button>
-            ))
-          )}
+          {categories?.map((cat) => (
+            <Button
+              key={cat.id}
+              variant={selectedCategoryId === cat.id ? 'default' : 'secondary'}
+              size="sm"
+              onClick={() => setSelectedCategoryId(cat.id)}
+              className="whitespace-nowrap"
+            >
+              {cat.icon} {cat.name}
+            </Button>
+          ))}
         </div>
 
         {/* Menu Grid */}
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
+          {itemsLoading ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-40 rounded-xl" />
+                <Skeleton key={i} className="h-36 rounded-xl" />
               ))}
-            </div>
-          ) : availableItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center">
-              <ShoppingBag className="w-16 h-16 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground text-lg">No items available</p>
-              <p className="text-sm text-muted-foreground">Try a different category or search</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {availableItems.map((item) => {
-                const inCart = cart.find(c => c.menuItem.id === item.id);
+                const inCart = newItems.find(c => c.menuItem.id === item.id);
                 return (
                   <button
                     key={item.id}
                     onClick={() => addToCart(item)}
                     className={cn(
-                      "bg-card border border-border rounded-xl p-4 text-left hover:border-primary/50 hover:shadow-lg transition-all active:scale-[0.98] group relative",
+                      "bg-card border border-border rounded-xl p-3 text-left hover:border-primary/50 transition-all active:scale-[0.98] relative",
                       inCart && "border-primary bg-primary/5"
                     )}
                   >
@@ -325,16 +492,9 @@ export default function POS() {
                         {inCart.quantity}
                       </div>
                     )}
-                    <div className="aspect-square rounded-lg bg-secondary mb-3 flex items-center justify-center text-4xl group-hover:scale-105 transition-transform">
-                      {item.category?.icon || '🍽️'}
-                    </div>
-                    <h4 className="font-semibold text-sm mb-1 line-clamp-2">{item.name}</h4>
-                    <div className="flex items-center justify-between">
-                      <span className="text-primary font-bold">{formatCurrency(Number(item.price))}</span>
-                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                        <Plus className="w-4 h-4" />
-                      </div>
-                    </div>
+                    <div className="text-3xl mb-2">{item.category?.icon || '🍽️'}</div>
+                    <h4 className="font-semibold text-sm line-clamp-1">{item.name}</h4>
+                    <span className="text-primary font-bold text-sm">{formatCurrency(Number(item.price))}</span>
                   </button>
                 );
               })}
@@ -343,233 +503,205 @@ export default function POS() {
         </div>
       </div>
 
-      {/* Cart Section */}
+      {/* Order Panel */}
       <div className="w-96 bg-card border border-border rounded-2xl flex flex-col overflow-hidden">
-        {/* Cart Header */}
+        {/* Order Header */}
         <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-display font-bold text-lg">Current Order</h2>
-            <div className="flex gap-2">
-              <Badge variant="secondary">{cart.length} items</Badge>
-              {cart.length > 0 && (
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearCart}>
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-lg">Order</h2>
+            <Badge variant="secondary">{allItems.length} items</Badge>
           </div>
-
-          {/* Table Selection for Dine-in */}
-          {orderType === 'dine_in' && (
-            <Button
-              variant={selectedTable ? 'default' : 'outline'}
-              size="sm"
-              className="w-full"
-              onClick={() => setTableDialogOpen(true)}
-            >
-              <LayoutGrid className="w-4 h-4 mr-2" />
-              {selectedTable
-                ? `Table ${selectedTable.number} - ${selectedTable.section}`
-                : 'Select Table'
-              }
-            </Button>
-          )}
         </div>
 
-        {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {cart.length === 0 ? (
+        {/* Order Items */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {allItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                <ShoppingBag className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground">No items in cart</p>
-              <p className="text-sm text-muted-foreground">Tap items to add them</p>
+              <ShoppingBag className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No items yet</p>
+              <p className="text-sm text-muted-foreground">Tap menu items to add</p>
             </div>
           ) : (
-            cart.map((item) => (
-              <div key={item.id} className="flex gap-3 p-3 bg-secondary/50 rounded-xl">
-                <div className="flex-1">
-                  <h4 className="font-medium text-sm">{item.menuItem.name}</h4>
-                  <p className="text-primary font-semibold text-sm">{formatCurrency(item.price)}</p>
+            <>
+              {/* Existing items (already sent via KOT) */}
+              {existingItems.length > 0 && (
+                <div className="mb-4">
+                  <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                    <ChefHat className="w-3 h-3" /> Sent to Kitchen
+                  </div>
+                  {existingItems.map((item) => (
+                    <div key={item.id} className="flex gap-2 p-2 bg-secondary/30 rounded-lg mb-1 opacity-70">
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{item.menuItem.name}</h4>
+                        <p className="text-xs text-muted-foreground">× {item.quantity}</p>
+                      </div>
+                      <span className="text-sm">{formatCurrency(item.price)}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => updateQuantity(item.id, -1)}
-                  >
-                    <Minus className="w-4 h-4" />
-                  </Button>
-                  <span className="w-8 text-center font-semibold">{item.quantity}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => updateQuantity(item.id, 1)}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => removeItem(item.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+              )}
+
+              {/* New items (current KOT) */}
+              {newItems.length > 0 && (
+                <div>
+                  <div className="text-xs text-primary mb-2 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> New Items (KOT #{kotNumber})
+                  </div>
+                  {newItems.map((item) => (
+                    <div key={item.id} className="flex gap-2 p-2 bg-primary/10 rounded-lg mb-1 border border-primary/20">
+                      <div className="flex-1">
+                        <h4 className="font-medium text-sm">{item.menuItem.name}</h4>
+                        <p className="text-primary font-semibold text-sm">{formatCurrency(item.price)}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => updateQuantity(item.id, -1, true)}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </Button>
+                        <span className="w-6 text-center text-sm font-semibold">{item.quantity}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => updateQuantity(item.id, 1, true)}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => removeItem(item.id, true)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))
+              )}
+            </>
           )}
         </div>
 
-        {/* Cart Footer */}
-        <div className="border-t border-border p-4 space-y-4">
-          {/* Quick Actions */}
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="flex-1">
-              <User className="w-4 h-4 mr-1" /> Customer
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1">
-              <Percent className="w-4 h-4 mr-1" /> Discount
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1">
-              <StickyNote className="w-4 h-4 mr-1" /> Note
-            </Button>
-          </div>
-
+        {/* Order Footer */}
+        <div className="border-t border-border p-4 space-y-3">
           {/* Totals */}
-          <div className="space-y-2 text-sm">
+          <div className="space-y-1 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
               <span>{formatCurrency(subtotal)}</span>
             </div>
-            {discountAmount > 0 && (
-              <div className="flex justify-between text-emerald-500">
-                <span>Discount</span>
-                <span>-{formatCurrency(discountAmount)}</span>
-              </div>
-            )}
             <div className="flex justify-between">
-              <span className="text-muted-foreground">CGST ({TAX_CONFIG.CGST}%)</span>
-              <span>{formatCurrency(cgst)}</span>
+              <span className="text-muted-foreground">Tax ({TAX_CONFIG.CGST + TAX_CONFIG.SGST}%)</span>
+              <span>{formatCurrency(tax)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">SGST ({TAX_CONFIG.SGST}%)</span>
-              <span>{formatCurrency(sgst)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-lg pt-2 border-t">
+            <div className="flex justify-between font-bold text-lg pt-1 border-t">
               <span>Total</span>
               <span className="text-primary">{formatCurrency(total)}</span>
             </div>
           </div>
 
-          {/* Payment Methods */}
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { method: 'cash', icon: Banknote, label: 'Cash' },
-              { method: 'card', icon: CreditCard, label: 'Card' },
-              { method: 'upi', icon: QrCode, label: 'UPI' },
-              { method: 'wallet', icon: Smartphone, label: 'Wallet' },
-            ].map(({ method, icon: Icon, label }) => (
-              <Button
-                key={method}
-                variant={paymentMethod === method ? 'default' : 'outline'}
-                size="sm"
-                className="flex-col h-14 gap-1"
-                onClick={() => setPaymentMethod(method as any)}
-              >
-                <Icon className="w-4 h-4" />
-                <span className="text-xs">{label}</span>
-              </Button>
-            ))}
-          </div>
+          {/* Action Buttons */}
+          <div className="space-y-2">
+            {/* Send KOT Button */}
+            <Button
+              className="w-full h-12"
+              variant={newItems.length > 0 ? 'default' : 'secondary'}
+              disabled={newItems.length === 0 || isProcessing}
+              onClick={sendKOT}
+            >
+              <Send className="w-4 h-4 mr-2" />
+              {isProcessing ? 'Sending...' : `Send KOT #${kotNumber}`}
+              {newItems.length > 0 && ` (${newItems.length} items)`}
+            </Button>
 
-          {/* Place Order Button */}
-          <Button
-            className="w-full h-14 text-lg font-bold"
-            disabled={cart.length === 0 || isProcessing}
-            onClick={handlePlaceOrder}
-          >
-            {isProcessing ? (
-              <span className="animate-pulse">Processing...</span>
-            ) : (
-              <>
-                Place Order • {formatCurrency(total)}
-              </>
-            )}
-          </Button>
+            {/* Generate Bill Button */}
+            <Button
+              className="w-full h-12"
+              variant="outline"
+              disabled={allItems.length === 0 || newItems.length > 0}
+              onClick={generateBill}
+            >
+              <Receipt className="w-4 h-4 mr-2" />
+              Generate Bill
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Table Selection Dialog */}
-      <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
-        <DialogContent className="max-w-2xl">
+      {/* Bill & Payment Dialog */}
+      <Dialog open={showBillDialog} onOpenChange={setShowBillDialog}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Select a Table</DialogTitle>
+            <DialogTitle className="text-center">Bill - Table {selectedTable?.number}</DialogTitle>
           </DialogHeader>
 
-          {tablesLoading ? (
-            <div className="grid grid-cols-4 gap-3">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <Skeleton key={i} className="h-24 rounded-xl" />
+          <div className="space-y-4">
+            {/* Bill Items */}
+            <div className="border rounded-lg p-4 space-y-2 max-h-60 overflow-y-auto">
+              {allItems.map((item, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span>{item.menuItem.name} × {item.quantity}</span>
+                  <span>{formatCurrency(item.price)}</span>
+                </div>
               ))}
             </div>
-          ) : freeTables.length === 0 ? (
-            <div className="text-center py-12">
-              <LayoutGrid className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No free tables available</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                All tables are currently occupied
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-3 max-h-96 overflow-y-auto">
-              {tables?.map((table) => {
-                const isFree = table.status === 'free';
-                const isSelected = selectedTable?.id === table.id;
 
-                return (
-                  <button
-                    key={table.id}
-                    onClick={() => isFree && selectTable(table)}
-                    disabled={!isFree}
-                    className={cn(
-                      "p-4 rounded-xl border-2 transition-all text-center",
-                      isFree
-                        ? "border-border hover:border-primary cursor-pointer bg-card"
-                        : "border-border/50 cursor-not-allowed opacity-50 bg-muted",
-                      isSelected && "border-primary bg-primary/10"
-                    )}
-                  >
-                    <div className={cn(
-                      "text-2xl font-bold mb-1",
-                      isFree ? "text-foreground" : "text-muted-foreground"
-                    )}>
-                      T{table.number}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {table.section}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {table.capacity} seats
-                    </div>
-                    <Badge
-                      variant={isFree ? 'default' : 'secondary'}
-                      className={cn(
-                        "mt-2 text-xs",
-                        isFree && "bg-emerald-500"
-                      )}
-                    >
-                      {isFree ? 'Free' : table.status}
-                    </Badge>
-                  </button>
-                );
-              })}
+            {/* Bill Totals */}
+            <div className="border-t pt-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>CGST ({TAX_CONFIG.CGST}%)</span>
+                <span>{formatCurrency(cgst)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>SGST ({TAX_CONFIG.SGST}%)</span>
+                <span>{formatCurrency(sgst)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-xl pt-2 border-t">
+                <span>Total</span>
+                <span className="text-primary">{formatCurrency(total)}</span>
+              </div>
             </div>
-          )}
+
+            {/* Payment Methods */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { method: 'cash', icon: Banknote, label: 'Cash' },
+                { method: 'card', icon: CreditCard, label: 'Card' },
+                { method: 'upi', icon: QrCode, label: 'UPI' },
+                { method: 'wallet', icon: Smartphone, label: 'Wallet' },
+              ].map(({ method, icon: Icon, label }) => (
+                <Button
+                  key={method}
+                  variant={paymentMethod === method ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-col h-16 gap-1"
+                  onClick={() => setPaymentMethod(method as any)}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-xs">{label}</span>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBillDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={completePayment} disabled={isProcessing} className="min-w-32">
+              {isProcessing ? 'Processing...' : `Pay ${formatCurrency(total)}`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
