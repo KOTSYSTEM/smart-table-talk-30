@@ -46,8 +46,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     is_active BOOLEAN DEFAULT true,
     last_restocked TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(organization_id, sku)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 3. Purchase Orders
@@ -304,14 +303,27 @@ CREATE TABLE IF NOT EXISTS table_sections (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 19. Link tables to sections
-ALTER TABLE restaurant_tables 
-ADD COLUMN IF NOT EXISTS section_id UUID REFERENCES table_sections(id) ON DELETE SET NULL,
-ADD COLUMN IF NOT EXISTS min_capacity INTEGER DEFAULT 1,
-ADD COLUMN IF NOT EXISTS max_capacity INTEGER,
-ADD COLUMN IF NOT EXISTS is_combinable BOOLEAN DEFAULT true,
-ADD COLUMN IF NOT EXISTS position_x INTEGER,
-ADD COLUMN IF NOT EXISTS position_y INTEGER;
+-- 19. Link tables to sections (handle different table names)
+DO $$
+BEGIN
+    -- Try restaurant_tables first
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'restaurant_tables') THEN
+        ALTER TABLE restaurant_tables ADD COLUMN IF NOT EXISTS section_id UUID;
+        ALTER TABLE restaurant_tables ADD COLUMN IF NOT EXISTS min_capacity INTEGER DEFAULT 1;
+        ALTER TABLE restaurant_tables ADD COLUMN IF NOT EXISTS max_capacity INTEGER;
+        ALTER TABLE restaurant_tables ADD COLUMN IF NOT EXISTS is_combinable BOOLEAN DEFAULT true;
+        ALTER TABLE restaurant_tables ADD COLUMN IF NOT EXISTS position_x INTEGER;
+        ALTER TABLE restaurant_tables ADD COLUMN IF NOT EXISTS position_y INTEGER;
+    -- Then try tables
+    ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tables') THEN
+        ALTER TABLE tables ADD COLUMN IF NOT EXISTS section_id UUID;
+        ALTER TABLE tables ADD COLUMN IF NOT EXISTS min_capacity INTEGER DEFAULT 1;
+        ALTER TABLE tables ADD COLUMN IF NOT EXISTS max_capacity INTEGER;
+        ALTER TABLE tables ADD COLUMN IF NOT EXISTS is_combinable BOOLEAN DEFAULT true;
+        ALTER TABLE tables ADD COLUMN IF NOT EXISTS position_x INTEGER;
+        ALTER TABLE tables ADD COLUMN IF NOT EXISTS position_y INTEGER;
+    END IF;
+END $$;
 
 -- ============ DELIVERY ZONE MANAGEMENT ============
 
@@ -352,7 +364,6 @@ CREATE TABLE IF NOT EXISTS delivery_partners (
 
 CREATE INDEX IF NOT EXISTS idx_suppliers_org ON suppliers(organization_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_org ON inventory_items(organization_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_items_sku ON inventory_items(sku);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_org ON purchase_orders(organization_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_item ON stock_movements(inventory_item_id);
