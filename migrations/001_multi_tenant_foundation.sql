@@ -133,7 +133,14 @@ ALTER TABLE locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 
--- 8. Create RLS Policies
+-- 8. Create RLS Policies (Drop first if exists)
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Staff can view their organization" ON organizations;
+DROP POLICY IF EXISTS "Staff can view org locations" ON locations;
+DROP POLICY IF EXISTS "Staff can view org staff" ON staff;
 
 -- Profiles: Users can only see/edit their own profile
 CREATE POLICY "Users can view own profile" ON profiles
