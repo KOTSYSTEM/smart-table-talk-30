@@ -6,11 +6,11 @@
 -- First, let's see what organizations exist
 SELECT id, name, slug FROM organizations;
 
--- Get the first organization ID
+-- Get the first organization ID and create staff
 DO $$
 DECLARE
     v_org_id UUID;
-    v_user_id UUID;
+    v_location_id UUID;
 BEGIN
     -- Get the first organization
     SELECT id INTO v_org_id FROM organizations LIMIT 1;
@@ -24,20 +24,23 @@ BEGIN
         RAISE NOTICE 'Created organization: %', v_org_id;
     END IF;
     
-    -- Create a default location if none exists
-    IF NOT EXISTS (SELECT 1 FROM locations WHERE organization_id = v_org_id) THEN
-        INSERT INTO locations (organization_id, name, address, is_primary)
-        VALUES (v_org_id, 'Main Branch', '123 Restaurant St', true);
+    -- Get or create a default location
+    SELECT id INTO v_location_id FROM locations WHERE organization_id = v_org_id LIMIT 1;
+    
+    IF v_location_id IS NULL THEN
+        INSERT INTO locations (organization_id, name, address_line1, is_primary)
+        VALUES (v_org_id, 'Main Branch', '123 Restaurant St', true)
+        RETURNING id INTO v_location_id;
         
-        RAISE NOTICE 'Created default location';
+        RAISE NOTICE 'Created default location: %', v_location_id;
     END IF;
     
     -- Create staff records for all authenticated users who don't have one
-    INSERT INTO staff (organization_id, user_id, name, email, role, is_active)
+    INSERT INTO staff (organization_id, user_id, full_name, email, role, is_active)
     SELECT 
         v_org_id,
         au.id,
-        COALESCE(au.raw_user_meta_data->>'full_name', au.email),
+        COALESCE(au.raw_user_meta_data->>'full_name', split_part(au.email, '@', 1)),
         au.email,
         'owner',
         true
@@ -48,9 +51,6 @@ BEGIN
     
     RAISE NOTICE 'Staff records created for all users';
     
-    -- Also update tables to have organization_id
-    UPDATE restaurant_tables SET organization_id = v_org_id WHERE organization_id IS NULL;
-    
     -- Update categories to have organization_id
     UPDATE categories SET organization_id = v_org_id WHERE organization_id IS NULL;
     
@@ -60,23 +60,26 @@ BEGIN
     -- Update customers to have organization_id
     UPDATE customers SET organization_id = v_org_id WHERE organization_id IS NULL;
     
+    -- Update tables if exists (check for both names)
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'restaurant_tables') THEN
+        EXECUTE 'UPDATE restaurant_tables SET organization_id = $1 WHERE organization_id IS NULL' USING v_org_id;
+    ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tables') THEN
+        EXECUTE 'UPDATE tables SET organization_id = $1 WHERE organization_id IS NULL' USING v_org_id;
+    END IF;
+    
     RAISE NOTICE 'All records updated with organization_id: %', v_org_id;
 END $$;
 
 -- Verify staff records
-SELECT s.id, s.name, s.email, s.role, o.name as org_name
+SELECT s.id, s.full_name, s.email, s.role, o.name as org_name
 FROM staff s
 JOIN organizations o ON o.id = s.organization_id;
 
--- Temporarily make orders RLS more permissive for staff
+-- Fix orders RLS policy - make it more permissive for staff
 DROP POLICY IF EXISTS "Staff can create orders" ON orders;
 CREATE POLICY "Staff can create orders" ON orders
     FOR INSERT WITH CHECK (
-        -- Allow if user has a staff record in any org
         EXISTS (SELECT 1 FROM staff WHERE user_id = auth.uid() AND is_active = true)
-        OR
-        -- Or allow if organization_id matches where user is staff
-        organization_id IN (SELECT organization_id FROM staff WHERE user_id = auth.uid() AND is_active = true)
     );
 
 DROP POLICY IF EXISTS "Staff can view orders" ON orders;
@@ -107,4 +110,5 @@ CREATE POLICY "Staff can read organizations" ON organizations
         EXISTS (SELECT 1 FROM staff WHERE user_id = auth.uid() AND is_active = true)
     );
 
-RAISE NOTICE 'RLS policies updated successfully!';
+-- Done!
+SELECT 'RLS FIX COMPLETE! Staff records created and policies updated.' as status;
