@@ -2,20 +2,41 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useTables, useTableSections, useUpdateTableStatus, type RestaurantTable } from '@/hooks/useTables';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { 
-  Users, 
-  Clock, 
-  DollarSign, 
+import { supabase } from '@/integrations/supabase/client';
+import {
+  Users,
+  Clock,
+  DollarSign,
   Plus,
   ArrowRightLeft,
   Merge,
   Receipt,
   Sparkles,
-  MoreVertical
+  MoreVertical,
+  Trash2,
+  Edit,
+  X
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 type TableStatus = 'free' | 'occupied' | 'reserved' | 'bill' | 'cleaning';
 
@@ -43,13 +64,31 @@ const statusLabels: Record<TableStatus, string> = {
   cleaning: 'Cleaning',
 };
 
+const SECTIONS = [
+  'Bar Area (1st Floor)',
+  'Family Section (2nd Floor)',
+  'DJ Area (2nd Floor)',
+  'Outdoor',
+  'Private Dining',
+];
+
 export default function Tables() {
   const [selectedTable, setSelectedTable] = useState<RestaurantTable | null>(null);
   const [selectedSection, setSelectedSection] = useState<string>('all');
-  
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Add table form
+  const [newTableNumber, setNewTableNumber] = useState('');
+  const [newTableSection, setNewTableSection] = useState(SECTIONS[0]);
+  const [newTableCapacity, setNewTableCapacity] = useState('4');
+  const [bulkCount, setBulkCount] = useState('1');
+
   const { data: sections } = useTableSections();
   const { data: tables, isLoading } = useTables(selectedSection === 'all' ? undefined : selectedSection);
   const updateTableStatus = useUpdateTableStatus();
+  const queryClient = useQueryClient();
 
   const allSections = ['all', ...(sections || [])];
 
@@ -58,6 +97,13 @@ export default function Tables() {
     free: tables?.filter(t => t.status === 'free').length || 0,
     occupied: tables?.filter(t => t.status === 'occupied').length || 0,
     reserved: tables?.filter(t => t.status === 'reserved').length || 0,
+  };
+
+  // Get next available table number
+  const getNextTableNumber = () => {
+    if (!tables || tables.length === 0) return 1;
+    const maxNumber = Math.max(...tables.map(t => t.number));
+    return maxNumber + 1;
   };
 
   const formatDuration = (date?: string | null) => {
@@ -79,6 +125,78 @@ export default function Tables() {
     }
   };
 
+  // Add new table(s)
+  const handleAddTable = async () => {
+    setIsProcessing(true);
+    try {
+      // Get organization_id
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('id')
+        .limit(1)
+        .single();
+
+      if (!org) throw new Error('No organization found');
+
+      const count = parseInt(bulkCount) || 1;
+      const startNumber = parseInt(newTableNumber) || getNextTableNumber();
+      const capacity = parseInt(newTableCapacity) || 4;
+
+      const tablesToAdd = [];
+      for (let i = 0; i < count; i++) {
+        tablesToAdd.push({
+          organization_id: org.id,
+          number: startNumber + i,
+          section: newTableSection,
+          capacity: capacity,
+          status: 'free',
+        });
+      }
+
+      const { error } = await supabase
+        .from('restaurant_tables')
+        .insert(tablesToAdd);
+
+      if (error) throw error;
+
+      toast.success(`${count} table(s) added successfully!`);
+      setShowAddDialog(false);
+      setNewTableNumber('');
+      setBulkCount('1');
+      queryClient.invalidateQueries({ queryKey: ['restaurant_tables'] });
+    } catch (error: any) {
+      console.error('Add table error:', error);
+      toast.error(error.message || 'Failed to add table');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Delete table
+  const handleDeleteTable = async () => {
+    if (!selectedTable) return;
+
+    setIsProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('restaurant_tables')
+        .delete()
+        .eq('id', selectedTable.id);
+
+      if (error) throw error;
+
+      toast.success(`Table ${selectedTable.number} deleted`);
+      setShowDeleteDialog(false);
+      setSelectedTable(null);
+      queryClient.invalidateQueries({ queryKey: ['restaurant_tables'] });
+    } catch (error: any) {
+      console.error('Delete table error:', error);
+      toast.error(error.message || 'Failed to delete table');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="flex gap-6 h-[calc(100vh-7rem)] animate-fade-in">
       {/* Main Content */}
@@ -91,7 +209,10 @@ export default function Tables() {
               Manage floor layout and table assignments
             </p>
           </div>
-          <Button>
+          <Button onClick={() => {
+            setNewTableNumber(String(getNextTableNumber()));
+            setShowAddDialog(true);
+          }}>
             <Plus className="w-4 h-4 mr-2" /> Add Table
           </Button>
         </div>
@@ -117,16 +238,16 @@ export default function Tables() {
         </div>
 
         {/* Section Filter */}
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
           {allSections.map((section) => (
             <Button
               key={section}
               variant={selectedSection === section ? 'default' : 'secondary'}
               size="sm"
               onClick={() => setSelectedSection(section)}
-              className="capitalize"
+              className="whitespace-nowrap"
             >
-              {section}
+              {section === 'all' ? 'All Sections' : section}
             </Button>
           ))}
         </div>
@@ -134,76 +255,70 @@ export default function Tables() {
         {/* Floor Plan */}
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <Skeleton key={i} className="h-40 rounded-2xl" />
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+              {Array.from({ length: 16 }).map((_, i) => (
+                <Skeleton key={i} className="h-28 rounded-xl" />
               ))}
             </div>
           ) : tables?.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <p className="text-muted-foreground">No tables found</p>
-              <p className="text-sm text-muted-foreground">Add tables to get started</p>
+              <p className="text-sm text-muted-foreground mb-4">Add tables to get started</p>
+              <Button onClick={() => setShowAddDialog(true)}>
+                <Plus className="w-4 h-4 mr-2" /> Add First Table
+              </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
               {tables?.map((table) => (
                 <button
                   key={table.id}
                   onClick={() => setSelectedTable(table)}
                   className={cn(
-                    'relative p-5 rounded-2xl border-2 bg-gradient-to-br transition-all hover:scale-105 text-left',
+                    'relative p-4 rounded-xl border-2 bg-gradient-to-br transition-all hover:scale-105 text-left',
                     statusBg[table.status as TableStatus],
                     selectedTable?.id === table.id && 'ring-2 ring-primary ring-offset-2 ring-offset-background'
                   )}
                 >
                   {/* Status Indicator */}
                   <div className={cn(
-                    'absolute top-3 right-3 w-3 h-3 rounded-full',
+                    'absolute top-2 right-2 w-2 h-2 rounded-full',
                     statusColors[table.status as TableStatus],
                     table.status === 'occupied' && 'animate-pulse'
                   )} />
 
                   {/* Table Number */}
-                  <div className="mb-4">
-                    <span className="text-3xl font-display font-bold">T{table.number}</span>
-                    <Badge variant="secondary" className="ml-2 text-xs">
-                      {table.section}
-                    </Badge>
-                  </div>
-
-                  {/* Table Info */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Users className="w-4 h-4 text-muted-foreground" />
-                      <span>
-                        {table.guest_count || 0} / {table.capacity} seats
-                      </span>
+                  <div className="text-center">
+                    <span className="text-2xl font-display font-bold">T{table.number}</span>
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                      {table.section.split('(')[0].trim()}
+                    </p>
+                    <div className="flex items-center justify-center gap-1 text-xs mt-1">
+                      <Users className="w-3 h-3" />
+                      {table.capacity}
                     </div>
-                    
-                    {table.status === 'occupied' && table.occupied_since && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Clock className="w-4 h-4" />
-                        <span>{formatDuration(table.occupied_since)}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Status Label */}
-                  <div className="mt-4">
-                    <Badge
-                      variant={table.status === 'free' ? 'tableFree' : 
-                               table.status === 'occupied' ? 'tableOccupied' :
-                               table.status === 'reserved' ? 'tableReserved' :
-                               table.status === 'bill' ? 'tableBill' : 'tableCleaning'}
-                    >
-                      {statusLabels[table.status as TableStatus]}
-                    </Badge>
                   </div>
                 </button>
               ))}
             </div>
           )}
         </div>
+
+        {/* Section Stats */}
+        {sections && sections.length > 0 && (
+          <div className="flex gap-4 pt-4 border-t mt-4 text-sm">
+            {sections.map(section => {
+              const count = tables?.filter(t => t.section === section).length || 0;
+              const freeCount = tables?.filter(t => t.section === section && t.status === 'free').length || 0;
+              return (
+                <div key={section} className="flex items-center gap-2">
+                  <span className="text-muted-foreground">{section.split('(')[0].trim()}:</span>
+                  <Badge variant="secondary">{freeCount}/{count}</Badge>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Table Detail Panel */}
@@ -216,7 +331,7 @@ export default function Tables() {
                 <p className="text-sm text-muted-foreground">{selectedTable.section}</p>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setSelectedTable(null)}>
-                <MoreVertical className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </Button>
             </div>
           </div>
@@ -257,9 +372,9 @@ export default function Tables() {
                 )}
                 {selectedTable.status === 'occupied' && (
                   <>
-                    <Button 
-                      variant="secondary" 
-                      size="sm" 
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       className="justify-start"
                       onClick={() => handleStatusChange(selectedTable.id, 'bill')}
                     >
@@ -276,52 +391,142 @@ export default function Tables() {
                 <Button variant="secondary" size="sm" className="justify-start">
                   <Merge className="w-4 h-4 mr-2" /> Merge
                 </Button>
-                {selectedTable.status === 'bill' && (
-                  <Button 
-                    variant="secondary" 
-                    size="sm" 
+                {selectedTable.status === 'cleaning' && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     className="justify-start col-span-2"
-                    onClick={() => handleStatusChange(selectedTable.id, 'cleaning')}
+                    onClick={() => handleStatusChange(selectedTable.id, 'free')}
                   >
-                    <DollarSign className="w-4 h-4 mr-2" /> Complete Payment
-                  </Button>
-                )}
-                {selectedTable.status !== 'free' && selectedTable.status !== 'reserved' && (
-                  <Button 
-                    variant="secondary" 
-                    size="sm" 
-                    className="justify-start col-span-2"
-                    onClick={() => handleStatusChange(selectedTable.id, 'cleaning')}
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" /> Mark for Cleaning
+                    <Sparkles className="w-4 h-4 mr-2" /> Mark as Ready
                   </Button>
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Action Button */}
-          <div className="p-4 border-t border-border">
-            {selectedTable.status === 'free' ? (
-              <Button className="w-full">
-                <Plus className="w-4 h-4 mr-2" /> Start New Order
-              </Button>
-            ) : selectedTable.status === 'occupied' ? (
-              <Button className="w-full">
-                <Receipt className="w-4 h-4 mr-2" /> View Order
-              </Button>
-            ) : selectedTable.status === 'cleaning' ? (
-              <Button 
-                className="w-full" 
-                variant="success"
-                onClick={() => handleStatusChange(selectedTable.id, 'free')}
+            {/* Edit/Delete */}
+            <div className="pt-4 border-t space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start"
               >
-                <Sparkles className="w-4 h-4 mr-2" /> Mark as Ready
+                <Edit className="w-4 h-4 mr-2" /> Edit Table
               </Button>
-            ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start text-destructive hover:text-destructive"
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={selectedTable.status === 'occupied'}
+              >
+                <Trash2 className="w-4 h-4 mr-2" /> Delete Table
+              </Button>
+              {selectedTable.status === 'occupied' && (
+                <p className="text-xs text-muted-foreground">Cannot delete occupied table</p>
+              )}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Add Table Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Table(s)</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Starting Table Number</Label>
+                <Input
+                  type="number"
+                  value={newTableNumber}
+                  onChange={(e) => setNewTableNumber(e.target.value)}
+                  placeholder="e.g. 41"
+                />
+              </div>
+              <div>
+                <Label>Number of Tables</Label>
+                <Input
+                  type="number"
+                  value={bulkCount}
+                  onChange={(e) => setBulkCount(e.target.value)}
+                  min="1"
+                  max="20"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>Section</Label>
+              <Select value={newTableSection} onValueChange={setNewTableSection}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTIONS.map(section => (
+                    <SelectItem key={section} value={section}>{section}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Capacity (seats per table)</Label>
+              <Input
+                type="number"
+                value={newTableCapacity}
+                onChange={(e) => setNewTableCapacity(e.target.value)}
+                min="1"
+                max="20"
+              />
+            </div>
+
+            <div className="bg-secondary/50 rounded-lg p-3 text-sm">
+              <p className="font-medium">Preview:</p>
+              <p className="text-muted-foreground">
+                Will create {bulkCount} table(s) numbered T{newTableNumber}
+                {parseInt(bulkCount) > 1 && ` to T${parseInt(newTableNumber) + parseInt(bulkCount) - 1}`}
+                {' '}in {newTableSection}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddTable} disabled={isProcessing}>
+              {isProcessing ? 'Adding...' : `Add ${bulkCount} Table(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Table {selectedTable?.number}?</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-muted-foreground">
+            This action cannot be undone. Are you sure you want to delete this table?
+          </p>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteTable} disabled={isProcessing}>
+              {isProcessing ? 'Deleting...' : 'Delete Table'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
