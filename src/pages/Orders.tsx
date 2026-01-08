@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { mockOrders } from '@/data/mockData';
-import { Order, OrderStatus } from '@/types/restaurant';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useOrders, useUpdateOrderStatus, type OrderWithRelations } from '@/hooks/useOrders';
 import { formatCurrency } from '@/lib/currency';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { 
   Search, 
   Filter, 
@@ -15,6 +16,8 @@ import {
   Printer,
   ChevronRight
 } from 'lucide-react';
+
+type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';
 
 const statusConfig: Record<OrderStatus, { label: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'info' | 'destructive' }> = {
   pending: { label: 'Pending', variant: 'warning' },
@@ -27,31 +30,45 @@ const statusConfig: Record<OrderStatus, { label: string; variant: 'default' | 's
 };
 
 const orderTypeIcons: Record<string, string> = {
-  'dine-in': '🍽️',
+  'dine_in': '🍽️',
   'takeaway': '🥡',
   'delivery': '🚚',
   'online': '💻',
 };
 
 export default function Orders() {
-  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | 'all'>('all');
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | undefined>(undefined);
+  const [selectedOrder, setSelectedOrder] = useState<OrderWithRelations | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredOrders = mockOrders.filter(order => {
-    const matchesStatus = selectedStatus === 'all' || order.status === selectedStatus;
-    const matchesSearch = order.id.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  const { data: orders, isLoading } = useOrders(selectedStatus);
+  const updateOrderStatus = useUpdateOrderStatus();
 
-  const formatTime = (date: Date) => {
-    const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
+  const filteredOrders = orders?.filter(order => 
+    order.order_number?.toString().includes(searchQuery) ||
+    order.id.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
+
+  const formatTime = (date: string) => {
+    const minutes = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
     if (minutes < 1) return 'Just now';
     if (minutes < 60) return `${minutes}m ago`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
   };
 
-  const statusFilters: (OrderStatus | 'all')[] = ['all', 'pending', 'preparing', 'ready', 'served', 'completed'];
+  const handleStatusChange = async (orderId: string, newStatus: OrderStatus) => {
+    try {
+      await updateOrderStatus.mutateAsync({ id: orderId, status: newStatus });
+      toast.success(`Order marked as ${statusConfig[newStatus].label}`);
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: newStatus });
+      }
+    } catch {
+      toast.error('Failed to update order status');
+    }
+  };
+
+  const statusFilters: (OrderStatus | undefined)[] = [undefined, 'pending', 'preparing', 'ready', 'served', 'completed'];
 
   return (
     <div className="flex gap-6 h-[calc(100vh-7rem)] animate-fade-in">
@@ -92,16 +109,16 @@ export default function Orders() {
         <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
           {statusFilters.map((status) => (
             <Button
-              key={status}
+              key={status || 'all'}
               variant={selectedStatus === status ? 'default' : 'secondary'}
               size="sm"
               onClick={() => setSelectedStatus(status)}
               className="capitalize whitespace-nowrap"
             >
-              {status === 'all' ? 'All Orders' : statusConfig[status].label}
-              {status !== 'all' && (
+              {status ? statusConfig[status].label : 'All Orders'}
+              {status && (
                 <Badge variant="secondary" className="ml-2">
-                  {mockOrders.filter(o => o.status === status).length}
+                  {orders?.filter(o => o.status === status).length || 0}
                 </Badge>
               )}
             </Button>
@@ -110,48 +127,60 @@ export default function Orders() {
 
         {/* Orders Grid */}
         <div className="flex-1 overflow-y-auto space-y-3">
-          {filteredOrders.map((order) => (
-            <div
-              key={order.id}
-              onClick={() => setSelectedOrder(order)}
-              className={cn(
-                'bg-card border border-border rounded-xl p-4 cursor-pointer transition-all hover:border-primary/50',
-                selectedOrder?.id === order.id && 'border-primary ring-1 ring-primary'
-              )}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{orderTypeIcons[order.type]}</span>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold">#{order.id.slice(-4).toUpperCase()}</span>
-                      <Badge variant={statusConfig[order.status].variant}>
-                        {statusConfig[order.status].label}
-                      </Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground capitalize">
-                      {order.type} {order.tableId && `• Table ${order.tableId.slice(-1)}`}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-lg text-primary">{formatCurrency(order.total)}</p>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Clock className="w-3 h-3" />
-                    {formatTime(order.createdAt)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-border">
-                <div className="text-sm text-muted-foreground">
-                  {order.items.length} items • {order.items.map(i => i.menuItem.name).slice(0, 2).join(', ')}
-                  {order.items.length > 2 && ` +${order.items.length - 2} more`}
-                </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground" />
-              </div>
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-xl" />
+            ))
+          ) : filteredOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <p className="text-muted-foreground">No orders found</p>
+              <p className="text-sm text-muted-foreground">Orders will appear here when created</p>
             </div>
-          ))}
+          ) : (
+            filteredOrders.map((order) => (
+              <div
+                key={order.id}
+                onClick={() => setSelectedOrder(order)}
+                className={cn(
+                  'bg-card border border-border rounded-xl p-4 cursor-pointer transition-all hover:border-primary/50',
+                  selectedOrder?.id === order.id && 'border-primary ring-1 ring-primary'
+                )}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{orderTypeIcons[order.type]}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">#{order.order_number || order.id.slice(-4).toUpperCase()}</span>
+                        <Badge variant={statusConfig[order.status as OrderStatus].variant}>
+                          {statusConfig[order.status as OrderStatus].label}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground capitalize">
+                        {order.type.replace('_', '-')} {order.table && `• Table ${order.table.number}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-lg text-primary">{formatCurrency(Number(order.total))}</p>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Clock className="w-3 h-3" />
+                      {formatTime(order.created_at)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-border">
+                  <div className="text-sm text-muted-foreground">
+                    {order.items.length} items
+                    {order.items.length > 0 && ` • ${order.items.slice(0, 2).map(i => i.menu_item?.name).filter(Boolean).join(', ')}`}
+                    {order.items.length > 2 && ` +${order.items.length - 2} more`}
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -164,13 +193,13 @@ export default function Orders() {
                 <span className="text-2xl">{orderTypeIcons[selectedOrder.type]}</span>
                 <div>
                   <h2 className="font-display font-bold text-xl">
-                    Order #{selectedOrder.id.slice(-4).toUpperCase()}
+                    Order #{selectedOrder.order_number || selectedOrder.id.slice(-4).toUpperCase()}
                   </h2>
-                  <p className="text-sm text-muted-foreground capitalize">{selectedOrder.type}</p>
+                  <p className="text-sm text-muted-foreground capitalize">{selectedOrder.type.replace('_', '-')}</p>
                 </div>
               </div>
-              <Badge variant={statusConfig[selectedOrder.status].variant} className="text-sm">
-                {statusConfig[selectedOrder.status].label}
+              <Badge variant={statusConfig[selectedOrder.status as OrderStatus].variant} className="text-sm">
+                {statusConfig[selectedOrder.status as OrderStatus].label}
               </Badge>
             </div>
           </div>
@@ -178,22 +207,26 @@ export default function Orders() {
           {/* Items List */}
           <div className="flex-1 overflow-y-auto p-4">
             <h3 className="text-sm font-medium text-muted-foreground mb-3">Order Items</h3>
-            <div className="space-y-3">
-              {selectedOrder.items.map((item) => (
-                <div key={item.id} className="flex justify-between items-start p-3 bg-secondary/50 rounded-lg">
-                  <div className="flex-1">
-                    <p className="font-medium">{item.menuItem.name}</p>
-                    <p className="text-sm text-muted-foreground">Qty: {item.quantity}</p>
+            {selectedOrder.items.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No items in this order</p>
+            ) : (
+              <div className="space-y-3">
+                {selectedOrder.items.map((item) => (
+                  <div key={item.id} className="flex justify-between items-start p-3 bg-secondary/50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium">{item.menu_item?.name || 'Unknown Item'}</p>
+                      <p className="text-sm text-muted-foreground">Qty: {item.quantity}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">{formatCurrency(Number(item.total_price))}</p>
+                      <Badge variant="secondary" className="text-xs mt-1">
+                        {item.status}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold">{formatCurrency(item.price)}</p>
-                    <Badge variant="secondary" className="text-xs mt-1">
-                      {item.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Order Summary */}
@@ -201,21 +234,21 @@ export default function Orders() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span>{formatCurrency(selectedOrder.subtotal)}</span>
+                <span>{formatCurrency(Number(selectedOrder.subtotal))}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">GST (5%)</span>
-                <span>{formatCurrency(selectedOrder.tax)}</span>
+                <span className="text-muted-foreground">Tax</span>
+                <span>{formatCurrency(Number(selectedOrder.tax))}</span>
               </div>
-              {selectedOrder.discount > 0 && (
+              {Number(selectedOrder.discount) > 0 && (
                 <div className="flex justify-between text-success">
                   <span>Discount</span>
-                  <span>-{formatCurrency(selectedOrder.discount)}</span>
+                  <span>-{formatCurrency(Number(selectedOrder.discount))}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-border">
                 <span>Total</span>
-                <span className="text-primary">{formatCurrency(selectedOrder.total)}</span>
+                <span className="text-primary">{formatCurrency(Number(selectedOrder.total))}</span>
               </div>
             </div>
 
@@ -230,10 +263,23 @@ export default function Orders() {
             </div>
             
             {selectedOrder.status === 'ready' && (
-              <Button className="w-full">Mark as Served</Button>
+              <Button 
+                className="w-full"
+                onClick={() => handleStatusChange(selectedOrder.id, 'served')}
+                disabled={updateOrderStatus.isPending}
+              >
+                Mark as Served
+              </Button>
             )}
             {selectedOrder.status === 'served' && (
-              <Button className="w-full" variant="success">Complete Order</Button>
+              <Button 
+                className="w-full" 
+                variant="success"
+                onClick={() => handleStatusChange(selectedOrder.id, 'completed')}
+                disabled={updateOrderStatus.isPending}
+              >
+                Complete Order
+              </Button>
             )}
           </div>
         </div>
