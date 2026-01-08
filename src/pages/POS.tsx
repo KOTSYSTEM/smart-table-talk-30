@@ -169,8 +169,6 @@ export default function POS() {
           total,
           table_id: selectedTable?.id,
           notes: orderNotes || undefined,
-          payment_method: paymentMethod,
-          payment_status: paymentMethod === 'cash' ? 'pending' : 'pending',
         },
         items: cart.map(item => ({
           menu_item_id: item.menuItem.id,
